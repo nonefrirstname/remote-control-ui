@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Remote Control</title>
   <style>
     body {
@@ -20,7 +20,7 @@
       border: 2px solid #444;
       object-fit: contain;
       image-rendering: pixelated;
-      cursor: crosshair;
+      touch-action: none;
     }
     #controls button,
     #auth input, #auth button {
@@ -66,10 +66,11 @@
 
 <script>
 (() => {
-  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // ← замените на свой ngrok
+  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // ← замени на свой адрес
   let ws;
   let authorized = false;
-  let lastClickTime = 0;
+  let lastTapTime = 0;
+  let touchTimer = null;
 
   const screen = document.getElementById("screen");
   const passwordInput = document.getElementById("passwordInput");
@@ -131,24 +132,50 @@
     }
   };
 
-  // Клик или дабл-клик по экрану
-  screen.addEventListener("click", (e) => {
-    if (!authorized) return;
-
+  function getXY(touch) {
     const rect = screen.getBoundingClientRect();
-    const x = Math.round((e.clientX - rect.left) * 1280 / screen.clientWidth);
-    const y = Math.round((e.clientY - rect.top) * 720 / screen.clientHeight);
+    const x = Math.round((touch.clientX - rect.left) * 1280 / screen.clientWidth);
+    const y = Math.round((touch.clientY - rect.top) * 720 / screen.clientHeight);
+    return { x, y };
+  }
 
+  // 👆 Одиночный тап / двойной тап / удержание = ПКМ
+  screen.addEventListener("touchstart", (e) => {
+    if (!authorized) return;
+    const touch = e.touches[0];
+    const { x, y } = getXY(touch);
     const now = Date.now();
-    const doubleClick = now - lastClickTime < 300;
-    lastClickTime = now;
+    const doubleTap = now - lastTapTime < 300;
+    lastTapTime = now;
 
-    ws.send(JSON.stringify({ type: "click", x, y }));
-    if (doubleClick) {
-      ws.send(JSON.stringify({ type: "click", x, y })); // второй клик
+    // таймер на правый клик (удержание)
+    touchTimer = setTimeout(() => {
+      ws.send(JSON.stringify({ type: "right_click", x, y }));
+      touchTimer = null;
+    }, 500);
+  }, { passive: false });
+
+  screen.addEventListener("touchend", (e) => {
+    if (!authorized) return;
+    const touch = e.changedTouches[0];
+    const { x, y } = getXY(touch);
+
+    // Если отпустили до таймера — это клик
+    if (touchTimer) {
+      clearTimeout(touchTimer);
+      touchTimer = null;
+
+      // дабл-клик
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        ws.send(JSON.stringify({ type: "click", x, y }));
+        ws.send(JSON.stringify({ type: "click", x, y }));
+      } else {
+        ws.send(JSON.stringify({ type: "click", x, y }));
+      }
     }
 
-    hiddenInput.focus(); // вызвать клавиатуру
+    hiddenInput.focus(); // открыть клавиатуру
   });
 
   // Ввод текста
@@ -161,7 +188,6 @@
     }
   });
 
-  // Backspace с клавиатуры
   hiddenInput.addEventListener("keydown", (e) => {
     if (!authorized) return;
     if (e.key === "Backspace") {
