@@ -15,17 +15,25 @@
     }
     #screen {
       width: 100vw;
+      height: auto;
       max-width: 1280px;
       border: 2px solid #444;
-      touch-action: none;
+      object-fit: contain;
+      image-rendering: pixelated;
+      cursor: crosshair;
     }
     #controls button,
     #auth input, #auth button {
       font-size: 1.2em;
       margin: 5px;
-      padding: 8px;
+      padding: 10px 16px;
       border: none;
       border-radius: 4px;
+      background: #333;
+      color: white;
+    }
+    #controls {
+      margin-top: 10px;
     }
     #hiddenInput {
       position: fixed;
@@ -50,16 +58,18 @@
 </div>
 
 <div id="controls" style="display:none;">
-  <button id="backspaceBtn">⌫</button>
+  <button id="scrollUp">🔼 Прокрутка вверх</button>
+  <button id="scrollDown">🔽 Прокрутка вниз</button>
 </div>
 
 <input id="hiddenInput" type="text" autocomplete="off" />
 
 <script>
 (() => {
-  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // ← Замени на свой ngrok
+  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // ← замените на свой ngrok
   let ws;
   let authorized = false;
+  let lastClickTime = 0;
 
   const screen = document.getElementById("screen");
   const passwordInput = document.getElementById("passwordInput");
@@ -67,8 +77,9 @@
   const statusDiv = document.getElementById("status");
   const authDiv = document.getElementById("auth");
   const controlsDiv = document.getElementById("controls");
-  const backspaceBtn = document.getElementById("backspaceBtn");
   const hiddenInput = document.getElementById("hiddenInput");
+  const scrollUpBtn = document.getElementById("scrollUp");
+  const scrollDownBtn = document.getElementById("scrollDown");
 
   function connect() {
     ws = new WebSocket(wsUrl);
@@ -120,33 +131,25 @@
     }
   };
 
-  // Клик по экрану → фокус в input
-  screen.addEventListener("touchend", (e) => {
+  // Клик или дабл-клик по экрану
+  screen.addEventListener("click", (e) => {
     if (!authorized) return;
 
     const rect = screen.getBoundingClientRect();
-    const touch = e.changedTouches[0];
-    const x = Math.round((touch.clientX - rect.left) * 1280 / screen.clientWidth);
-    const y = Math.round((touch.clientY - rect.top) * 720 / screen.clientHeight);
+    const x = Math.round((e.clientX - rect.left) * 1280 / screen.clientWidth);
+    const y = Math.round((e.clientY - rect.top) * 720 / screen.clientHeight);
+
+    const now = Date.now();
+    const doubleClick = now - lastClickTime < 300;
+    lastClickTime = now;
+
     ws.send(JSON.stringify({ type: "click", x, y }));
+    if (doubleClick) {
+      ws.send(JSON.stringify({ type: "click", x, y })); // второй клик
+    }
 
-    hiddenInput.focus();
+    hiddenInput.focus(); // вызвать клавиатуру
   });
-
-  // Свайп — скролл
-  let lastY = null;
-  screen.addEventListener("touchstart", (e) => {
-    lastY = e.touches[0].clientY;
-  }, { passive: false });
-
-  screen.addEventListener("touchmove", (e) => {
-    if (!authorized) return;
-    const currentY = e.touches[0].clientY;
-    const dy = lastY - currentY;
-    lastY = currentY;
-    ws.send(JSON.stringify({ type: "scroll", dy: Math.round(dy * 10) }));
-    e.preventDefault();
-  }, { passive: false });
 
   // Ввод текста
   hiddenInput.addEventListener("input", () => {
@@ -167,12 +170,15 @@
     }
   });
 
-  // Кнопка backspace
-  backspaceBtn.onclick = () => {
-    if (authorized) {
-      ws.send(JSON.stringify({ type: "backspace" }));
-      hiddenInput.focus();
-    }
+  // Скроллинг кнопками
+  scrollUpBtn.onclick = () => {
+    if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: 150 }));
+    hiddenInput.focus();
+  };
+
+  scrollDownBtn.onclick = () => {
+    if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: -150 }));
+    hiddenInput.focus();
   };
 
   connect();
