@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Remote PC Control</title>
+  <style>
+    body { background: #111; text-align: center; color: white; font-family: sans-serif; }
+    img { width: 90%; max-width: 1280px; border: 2px solid #444; }
+    input { margin: 10px; padding: 5px; width: 300px; }
+  </style>
+</head>
+<body>
+  <h2>📺 Прямой экран</h2>
+  <img id="screen" src="">
+  <br>
+  <input type="text" id="textInput" placeholder="Введите текст и нажмите Enter">
+  <script>
+    const ws = new WebSocket("ws://localhost:8765"); // замените на реальный IP
+    const screen = document.getElementById("screen");
+    const input = document.getElementById("textInput");
+
+    ws.onmessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "screen") {
+        screen.src = "data:image/jpeg;base64," + msg.data;
+      }
+    };
+
+    screen.onclick = e => {
+      const rect = screen.getBoundingClientRect();
+      const x = Math.round((e.clientX - rect.left) * 1280 / screen.clientWidth);
+      const y = Math.round((e.clientY - rect.top) * 720 / screen.clientHeight);
+      ws.send(JSON.stringify({ type: "click", x, y }));
+    };
+
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        ws.send(JSON.stringify({ type: "type", text: input.value }));
+        input.value = "";
+      }
+    });
+  </script>
+</body>
+</html>
