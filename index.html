@@ -64,7 +64,8 @@
   </div>
 
   <script>
-    const WS_URL = "wss://815c-176-7-134-177.ngrok-free.app"; // <-- сюда свою ws-ссылку с ngrok вставь
+    const WS_URL = "wss://54bc-176-7-134-177.ngrok-free.app"; // <-- сюда свою ws-ссылку с ngrok вставь
+    const PASSWORD = "12345"; // Пароль для авторизации, должен совпадать с сервером
 
     const screen = document.getElementById("screen");
     const input = document.getElementById("textInput");
@@ -81,8 +82,7 @@
 
       ws.onopen = () => {
         console.log("[WS] Подключено");
-        // Можно тут авторизацию сделать, если сервер ожидает пароль
-        // ws.send(JSON.stringify({ type: "auth", password: "supersecret" }));
+        ws.send(JSON.stringify({ type: "auth", password: PASSWORD }));
       };
 
       ws.onmessage = event => {
@@ -92,7 +92,7 @@
             screen.src = "data:image/jpeg;base64," + msg.data;
           } else if (msg.type === "auth") {
             if (msg.status === "fail") {
-              alert("Ошибка авторизации!");
+              alert("Ошибка авторизации! Соединение будет закрыто.");
               ws.close();
             } else if (msg.status === "ok") {
               console.log("Авторизация успешна");
@@ -116,7 +116,6 @@
 
     connect();
 
-    // Функция вычисления координат клика внутри оригинального экрана 1920x1080
     function getCorrectCoords(event, imgElement) {
       const rect = imgElement.getBoundingClientRect();
       const containerAspectRatio = rect.width / rect.height;
@@ -126,12 +125,10 @@
       let offsetX = 0, offsetY = 0;
 
       if (containerAspectRatio > imgAspectRatio) {
-        // Контейнер шире — пустые поля слева/справа
         displayedImgHeight = rect.height;
         displayedImgWidth = displayedImgHeight * imgAspectRatio;
         offsetX = (rect.width - displayedImgWidth) / 2;
       } else {
-        // Контейнер уже — пустые поля сверху/снизу
         displayedImgWidth = rect.width;
         displayedImgHeight = displayedImgWidth / imgAspectRatio;
         offsetY = (rect.height - displayedImgHeight) / 2;
@@ -141,7 +138,7 @@
       const yInImage = event.clientY - rect.top - offsetY;
 
       if (xInImage < 0 || yInImage < 0 || xInImage > displayedImgWidth || yInImage > displayedImgHeight) {
-        return null; // вне картинки
+        return null;
       }
 
       const x = Math.round((xInImage / displayedImgWidth) * ORIG_WIDTH);
@@ -150,7 +147,6 @@
       return { x, y };
     }
 
-    // Клик по экрану
     screen.addEventListener("click", e => {
       e.preventDefault();
       const coords = getCorrectCoords(e, screen);
@@ -158,20 +154,18 @@
       ws.send(JSON.stringify({ type: "click", x: coords.x, y: coords.y }));
     });
 
-    // Зажатие — для правого клика (ПКМ)
     let pressTimer;
     screen.addEventListener("pointerdown", e => {
       pressTimer = setTimeout(() => {
         const coords = getCorrectCoords(e, screen);
         if (!coords) return;
         ws.send(JSON.stringify({ type: "right_click", x: coords.x, y: coords.y }));
-      }, 600); // 600 мс — удержание для ПКМ
+      }, 600);
     });
     screen.addEventListener("pointerup", e => {
       clearTimeout(pressTimer);
     });
 
-    // Ввод текста с клавиатуры
     input.addEventListener("keydown", e => {
       if (e.key === "Enter") {
         const text = input.value;
@@ -183,10 +177,8 @@
       }
     });
 
-    // Кнопки скролла
     scrollUpBtn.onclick = () => ws.send(JSON.stringify({ type: "scroll", dy: 120 }));
     scrollDownBtn.onclick = () => ws.send(JSON.stringify({ type: "scroll", dy: -120 }));
-
   </script>
 </body>
 </html>
