@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Remote Control</title>
   <style>
     body {
@@ -12,15 +12,16 @@
       font-family: sans-serif;
       margin: 0;
       padding: 10px;
+      user-select: none;
     }
     #screen {
       width: 100vw;
-      height: auto;
       max-width: 1280px;
       border: 2px solid #444;
       object-fit: contain;
       image-rendering: pixelated;
-      touch-action: none;
+      touch-action: none; /* отключить жесты браузера */
+      cursor: crosshair;
     }
     #controls button,
     #auth input, #auth button {
@@ -48,13 +49,16 @@
 </head>
 <body>
 
-<h2>🖥️ Управление ПК</h2>
-<img id="screen" src="" alt="Screen"/>
+<h2>🖥️ Универсальное управление ПК</h2>
 
 <div id="auth">
   <input id="passwordInput" type="password" placeholder="Пароль" />
   <button id="loginBtn">Войти</button>
   <div id="status"></div>
+</div>
+
+<div id="screenContainer" style="display:none;">
+  <img id="screen" src="" alt="Screen" />
 </div>
 
 <div id="controls" style="display:none;">
@@ -66,17 +70,18 @@
 
 <script>
 (() => {
-  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // ← замени на свой адрес
+  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // <-- замени на свой ws
   let ws;
   let authorized = false;
-  let lastTapTime = 0;
-  let touchTimer = null;
 
-  const screen = document.getElementById("screen");
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
   const passwordInput = document.getElementById("passwordInput");
   const loginBtn = document.getElementById("loginBtn");
   const statusDiv = document.getElementById("status");
   const authDiv = document.getElementById("auth");
+  const screenContainer = document.getElementById("screenContainer");
+  const screen = document.getElementById("screen");
   const controlsDiv = document.getElementById("controls");
   const hiddenInput = document.getElementById("hiddenInput");
   const scrollUpBtn = document.getElementById("scrollUp");
@@ -97,6 +102,7 @@
           if (msg.status === "ok") {
             authorized = true;
             authDiv.style.display = "none";
+            screenContainer.style.display = "inline-block";
             controlsDiv.style.display = "block";
             hiddenInput.focus();
           } else {
@@ -115,6 +121,7 @@
       statusDiv.textContent = "🔌 Соединение закрыто";
       authorized = false;
       authDiv.style.display = "block";
+      screenContainer.style.display = "none";
       controlsDiv.style.display = "none";
     };
 
@@ -132,80 +139,140 @@
     }
   };
 
-  function getXY(touch) {
+  // --- Функции для конвертации координат ---
+  function getCoordsFromMouseEvent(e) {
+    const rect = screen.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left) * 1280 / screen.clientWidth);
+    const y = Math.round((e.clientY - rect.top) * 720 / screen.clientHeight);
+    return { x, y };
+  }
+  function getCoordsFromTouch(touch) {
     const rect = screen.getBoundingClientRect();
     const x = Math.round((touch.clientX - rect.left) * 1280 / screen.clientWidth);
     const y = Math.round((touch.clientY - rect.top) * 720 / screen.clientHeight);
     return { x, y };
   }
 
-  // 👆 Одиночный тап / двойной тап / удержание = ПКМ
-  screen.addEventListener("touchstart", (e) => {
-    if (!authorized) return;
-    const touch = e.touches[0];
-    const { x, y } = getXY(touch);
-    const now = Date.now();
-    const doubleTap = now - lastTapTime < 300;
-    lastTapTime = now;
+  // --- ДЛЯ МОБИЛЫ ---
+  if (isMobile) {
+    let lastTapTime = 0;
+    let touchTimer = null;
 
-    // таймер на правый клик (удержание)
-    touchTimer = setTimeout(() => {
-      ws.send(JSON.stringify({ type: "right_click", x, y }));
-      touchTimer = null;
-    }, 500);
-  }, { passive: false });
-
-  screen.addEventListener("touchend", (e) => {
-    if (!authorized) return;
-    const touch = e.changedTouches[0];
-    const { x, y } = getXY(touch);
-
-    // Если отпустили до таймера — это клик
-    if (touchTimer) {
-      clearTimeout(touchTimer);
-      touchTimer = null;
-
-      // дабл-клик
+    screen.addEventListener("touchstart", (e) => {
+      if (!authorized) return;
+      const touch = e.touches[0];
+      const { x, y } = getCoordsFromTouch(touch);
       const now = Date.now();
-      if (now - lastTapTime < 300) {
-        ws.send(JSON.stringify({ type: "click", x, y }));
-        ws.send(JSON.stringify({ type: "click", x, y }));
-      } else {
-        ws.send(JSON.stringify({ type: "click", x, y }));
-      }
-    }
 
-    hiddenInput.focus(); // открыть клавиатуру
-  });
+      // Таймер удержания для ПКМ (правый клик)
+      touchTimer = setTimeout(() => {
+        ws.send(JSON.stringify({ type: "right_click", x, y }));
+        touchTimer = null;
+      }, 500);
 
-  // Ввод текста
-  hiddenInput.addEventListener("input", () => {
-    if (!authorized) return;
-    const val = hiddenInput.value;
-    if (val.length > 0) {
-      ws.send(JSON.stringify({ type: "type", text: val }));
-      hiddenInput.value = "";
-    }
-  });
-
-  hiddenInput.addEventListener("keydown", (e) => {
-    if (!authorized) return;
-    if (e.key === "Backspace") {
-      ws.send(JSON.stringify({ type: "backspace" }));
+      lastTapTime = now;
       e.preventDefault();
-    }
-  });
+    }, { passive: false });
 
-  // Скроллинг кнопками
-  scrollUpBtn.onclick = () => {
-    if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: 150 }));
-    hiddenInput.focus();
-  };
+    screen.addEventListener("touchend", (e) => {
+      if (!authorized) return;
+      const touch = e.changedTouches[0];
+      const { x, y } = getCoordsFromTouch(touch);
 
-  scrollDownBtn.onclick = () => {
-    if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: -150 }));
-    hiddenInput.focus();
-  };
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          // Дабл-клик
+          ws.send(JSON.stringify({ type: "click", x, y }));
+          ws.send(JSON.stringify({ type: "click", x, y }));
+        } else {
+          // Одиночный клик
+          ws.send(JSON.stringify({ type: "click", x, y }));
+        }
+      }
+      hiddenInput.focus();
+      e.preventDefault();
+    }, { passive: false });
+
+    // Ввод с виртуальной клавиатуры
+    hiddenInput.addEventListener("input", () => {
+      if (!authorized) return;
+      const val = hiddenInput.value;
+      if (val.length > 0) {
+        ws.send(JSON.stringify({ type: "type", text: val }));
+        hiddenInput.value = "";
+      }
+    });
+
+    hiddenInput.addEventListener("keydown", (e) => {
+      if (!authorized) return;
+      if (e.key === "Backspace") {
+        ws.send(JSON.stringify({ type: "backspace" }));
+        e.preventDefault();
+      }
+    });
+
+    scrollUpBtn.onclick = () => {
+      if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: 150 }));
+      hiddenInput.focus();
+    };
+    scrollDownBtn.onclick = () => {
+      if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: -150 }));
+      hiddenInput.focus();
+    };
+
+  } else {
+    // --- ДЛЯ ПК ---
+
+    // Клик мышью
+    screen.addEventListener("click", (e) => {
+      if (!authorized) return;
+      const { x, y } = getCoordsFromMouseEvent(e);
+      ws.send(JSON.stringify({ type: "click", x, y }));
+      hiddenInput.focus();
+    });
+
+    // Двойной клик мышью
+    screen.addEventListener("dblclick", (e) => {
+      if (!authorized) return;
+      const { x, y } = getCoordsFromMouseEvent(e);
+      // Два клика подряд
+      ws.send(JSON.stringify({ type: "click", x, y }));
+      ws.send(JSON.stringify({ type: "click", x, y }));
+      hiddenInput.focus();
+    });
+
+    // Движение мыши (move)
+    screen.addEventListener("mousemove", (e) => {
+      if (!authorized) return;
+      const { x, y } = getCoordsFromMouseEvent(e);
+      ws.send(JSON.stringify({ type: "move", x, y }));
+    });
+
+    // Ввод с физической клавиатуры
+    document.addEventListener("keydown", (e) => {
+      if (!authorized) return;
+      if (e.key === "Backspace") {
+        ws.send(JSON.stringify({ type: "backspace" }));
+        e.preventDefault();
+      } else if (e.key.length === 1) {
+        ws.send(JSON.stringify({ type: "type", text: e.key }));
+      } else if (e.key === "Enter") {
+        ws.send(JSON.stringify({ type: "type", text: "\n" }));
+      }
+      // можно добавить поддержку Ctrl, Alt, стрелок и др. по желанию
+    });
+
+    scrollUpBtn.onclick = () => {
+      if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: 150 }));
+    };
+    scrollDownBtn.onclick = () => {
+      if (authorized) ws.send(JSON.stringify({ type: "scroll", dy: -150 }));
+    };
+  }
 
   connect();
 })();
