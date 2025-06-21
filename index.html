@@ -12,30 +12,70 @@
       text-align: center;
       margin: 0; padding: 0;
       user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+    }
+    #authForm {
+      margin-top: 30vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #authForm input[type="password"] {
+      font-size: 24px;
+      padding: 8px;
+      width: 250px;
+      border-radius: 5px;
+      border: none;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    #authForm button {
+      font-size: 20px;
+      padding: 8px 20px;
+      border-radius: 5px;
+      border: none;
+      background: #444;
+      color: white;
+      cursor: pointer;
+      user-select: none;
+    }
+    #authForm button:active {
+      background: #666;
     }
     #screen {
       max-width: 100vw;
       max-height: 70vh;
       border: 2px solid #444;
-      object-fit: contain;
       background: black;
       cursor: crosshair;
       touch-action: none;
-      display: none; /* Скрываем экран до авторизации */
+      display: none;
+      margin-top: 10px;
+      object-fit: contain;
     }
     #inputArea {
       margin-top: 10px;
-      display: none; /* Скрываем поле ввода до авторизации */
+      display: none;
+      width: 100%;
+      max-width: 400px;
     }
     input[type="text"] {
-      width: 90%;
-      max-width: 400px;
+      width: 100%;
       padding: 8px;
       font-size: 18px;
       border-radius: 5px;
       border: none;
+      box-sizing: border-box;
     }
-    button {
+    #scrollButtons {
+      display: none;
+      margin-top: 10px;
+    }
+    #scrollButtons button {
       margin: 5px;
       padding: 10px 15px;
       font-size: 16px;
@@ -46,18 +86,20 @@
       cursor: pointer;
       user-select: none;
     }
-    button:active {
+    #scrollButtons button:active {
       background: #666;
-    }
-    #scrollButtons {
-      display: none; /* Скрываем кнопки до авторизации */
     }
   </style>
 </head>
 <body>
 
-  <h2>📺 Прямой экран 1920×1080</h2>
-  <img id="screen" src="" alt="Screen stream" />
+  <div id="authForm">
+    <input id="passwordInput" type="password" placeholder="Введите пароль" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+    <button id="authButton">Авторизоваться</button>
+    <div id="authMessage" style="color: red; margin-top: 10px; display:none;">Неверный пароль</div>
+  </div>
+
+  <img id="screen" alt="Screen stream" />
 
   <div id="inputArea">
     <input id="textInput" type="text" placeholder="Введите текст и нажмите Enter" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
@@ -70,17 +112,20 @@
 
   <script>
     const WS_URL = "wss://54bc-176-7-134-177.ngrok-free.app"; // замени на свой ngrok адрес
-    const PASSWORD = "supersecret";
-
-    const screen = document.getElementById("screen");
-    const input = document.getElementById("textInput");
-    const scrollUpBtn = document.getElementById("scrollUp");
-    const scrollDownBtn = document.getElementById("scrollDown");
-    const inputArea = document.getElementById("inputArea");
-    const scrollButtons = document.getElementById("scrollButtons");
-
     const ORIG_WIDTH = 1920;
     const ORIG_HEIGHT = 1080;
+
+    const authForm = document.getElementById("authForm");
+    const passwordInput = document.getElementById("passwordInput");
+    const authButton = document.getElementById("authButton");
+    const authMessage = document.getElementById("authMessage");
+
+    const screen = document.getElementById("screen");
+    const inputArea = document.getElementById("inputArea");
+    const textInput = document.getElementById("textInput");
+    const scrollButtons = document.getElementById("scrollButtons");
+    const scrollUpBtn = document.getElementById("scrollUp");
+    const scrollDownBtn = document.getElementById("scrollDown");
 
     let ws;
     let authorized = false;
@@ -90,7 +135,7 @@
 
       ws.onopen = () => {
         console.log("[WS] Подключено");
-        ws.send(JSON.stringify({ type: "auth", password: PASSWORD }));
+        authMessage.style.display = "none";
       };
 
       ws.onmessage = event => {
@@ -101,17 +146,17 @@
             if (msg.status === "ok") {
               console.log("Авторизация успешна");
               authorized = true;
+              authForm.style.display = "none";
               screen.style.display = "block";
               inputArea.style.display = "block";
               scrollButtons.style.display = "block";
             } else {
-              alert("Ошибка авторизации! Соединение будет закрыто.");
-              ws.close();
+              authMessage.style.display = "block";
             }
             return;
           }
 
-          if (!authorized) return; // пока не авторизованы — игнорим другие сообщения
+          if (!authorized) return;
 
           if (msg.type === "screen") {
             screen.src = "data:image/jpeg;base64," + msg.data;
@@ -127,6 +172,7 @@
         screen.style.display = "none";
         inputArea.style.display = "none";
         scrollButtons.style.display = "none";
+        authForm.style.display = "block";
         setTimeout(connect, 3000);
       };
 
@@ -137,6 +183,19 @@
     }
 
     connect();
+
+    authButton.onclick = () => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        alert("Соединение не установлено");
+        return;
+      }
+      const pass = passwordInput.value;
+      if (pass.length === 0) {
+        alert("Введите пароль");
+        return;
+      }
+      ws.send(JSON.stringify({ type: "auth", password: pass }));
+    };
 
     function getCorrectCoords(event, imgElement) {
       const rect = imgElement.getBoundingClientRect();
@@ -190,13 +249,13 @@
       clearTimeout(pressTimer);
     });
 
-    input.addEventListener("keydown", e => {
+    textInput.addEventListener("keydown", e => {
       if (!authorized) return;
       if (e.key === "Enter") {
-        const text = input.value;
+        const text = textInput.value;
         if (text.trim().length === 0) return;
         ws.send(JSON.stringify({ type: "type", text }));
-        input.value = "";
+        textInput.value = "";
       } else if (e.key === "Backspace") {
         ws.send(JSON.stringify({ type: "backspace" }));
       }
