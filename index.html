@@ -20,10 +20,12 @@
       object-fit: contain;
       background: black;
       cursor: crosshair;
-      touch-action: none; /* отключаем сенсорный скролл */
+      touch-action: none;
+      display: none; /* Скрываем экран до авторизации */
     }
     #inputArea {
       margin-top: 10px;
+      display: none; /* Скрываем поле ввода до авторизации */
     }
     input[type="text"] {
       width: 90%;
@@ -47,6 +49,9 @@
     button:active {
       background: #666;
     }
+    #scrollButtons {
+      display: none; /* Скрываем кнопки до авторизации */
+    }
   </style>
 </head>
 <body>
@@ -64,18 +69,21 @@
   </div>
 
   <script>
-    const WS_URL = "wss://54bc-176-7-134-177.ngrok-free.app"; // <-- сюда свою ws-ссылку с ngrok вставь
-    const PASSWORD = "12345"; // Пароль для авторизации, должен совпадать с сервером
+    const WS_URL = "wss://54bc-176-7-134-177.ngrok-free.app"; // замени на свой ngrok адрес
+    const PASSWORD = "supersecret";
 
     const screen = document.getElementById("screen");
     const input = document.getElementById("textInput");
     const scrollUpBtn = document.getElementById("scrollUp");
     const scrollDownBtn = document.getElementById("scrollDown");
+    const inputArea = document.getElementById("inputArea");
+    const scrollButtons = document.getElementById("scrollButtons");
 
     const ORIG_WIDTH = 1920;
     const ORIG_HEIGHT = 1080;
 
     let ws;
+    let authorized = false;
 
     function connect() {
       ws = new WebSocket(WS_URL);
@@ -88,15 +96,25 @@
       ws.onmessage = event => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === "screen") {
-            screen.src = "data:image/jpeg;base64," + msg.data;
-          } else if (msg.type === "auth") {
-            if (msg.status === "fail") {
+
+          if (msg.type === "auth") {
+            if (msg.status === "ok") {
+              console.log("Авторизация успешна");
+              authorized = true;
+              screen.style.display = "block";
+              inputArea.style.display = "block";
+              scrollButtons.style.display = "block";
+            } else {
               alert("Ошибка авторизации! Соединение будет закрыто.");
               ws.close();
-            } else if (msg.status === "ok") {
-              console.log("Авторизация успешна");
             }
+            return;
+          }
+
+          if (!authorized) return; // пока не авторизованы — игнорим другие сообщения
+
+          if (msg.type === "screen") {
+            screen.src = "data:image/jpeg;base64," + msg.data;
           }
         } catch(e) {
           console.error("Ошибка обработки сообщения", e);
@@ -105,6 +123,10 @@
 
       ws.onclose = () => {
         console.log("[WS] Отключено, пытаюсь переподключиться через 3 сек...");
+        authorized = false;
+        screen.style.display = "none";
+        inputArea.style.display = "none";
+        scrollButtons.style.display = "none";
         setTimeout(connect, 3000);
       };
 
@@ -149,6 +171,7 @@
 
     screen.addEventListener("click", e => {
       e.preventDefault();
+      if (!authorized) return;
       const coords = getCorrectCoords(e, screen);
       if (!coords) return;
       ws.send(JSON.stringify({ type: "click", x: coords.x, y: coords.y }));
@@ -156,6 +179,7 @@
 
     let pressTimer;
     screen.addEventListener("pointerdown", e => {
+      if (!authorized) return;
       pressTimer = setTimeout(() => {
         const coords = getCorrectCoords(e, screen);
         if (!coords) return;
@@ -167,6 +191,7 @@
     });
 
     input.addEventListener("keydown", e => {
+      if (!authorized) return;
       if (e.key === "Enter") {
         const text = input.value;
         if (text.trim().length === 0) return;
@@ -177,8 +202,14 @@
       }
     });
 
-    scrollUpBtn.onclick = () => ws.send(JSON.stringify({ type: "scroll", dy: 120 }));
-    scrollDownBtn.onclick = () => ws.send(JSON.stringify({ type: "scroll", dy: -120 }));
+    scrollUpBtn.onclick = () => {
+      if (!authorized) return;
+      ws.send(JSON.stringify({ type: "scroll", dy: 120 }));
+    };
+    scrollDownBtn.onclick = () => {
+      if (!authorized) return;
+      ws.send(JSON.stringify({ type: "scroll", dy: -120 }));
+    };
   </script>
 </body>
 </html>
