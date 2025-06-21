@@ -19,19 +19,25 @@
     border: 2px solid #444;
     touch-action: none;
   }
-  input, button {
+  #auth input, #auth button,
+  #controls button {
     font-size: 1.2em;
     padding: 8px;
     margin: 8px 4px;
     border-radius: 4px;
     border: none;
   }
-  #controls {
-    margin-top: 10px;
-  }
   #status {
     margin: 10px 0;
     height: 1.5em;
+  }
+  #hiddenInput {
+    position: fixed;
+    top: 10px; left: 10px;
+    opacity: 0;
+    height: 1px;
+    width: 1px;
+    caret-color: transparent; /* Скрыть курсор */
   }
 </style>
 </head>
@@ -49,19 +55,17 @@
   <div id="status"></div>
 </div>
 
-<!-- Ввод текста -->
-<div id="textContainer" style="display:none;">
-  <input id="textInput" type="text" placeholder="Введите текст и нажмите Enter" autocomplete="off" />
-</div>
-
 <!-- Кнопки управления -->
 <div id="controls" style="display:none;">
   <button id="backspaceBtn">Backspace</button>
 </div>
 
+<!-- Скрытое поле для клавиатуры -->
+<input id="hiddenInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+
 <script>
 (() => {
-  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // Поменяй на свой ngrok адрес
+  const wsUrl = "wss://54bc-176-7-134-177.ngrok-free.app"; // Поменяй на свой адрес
   let ws;
   let authorized = false;
 
@@ -70,10 +74,9 @@
   const loginBtn = document.getElementById("loginBtn");
   const statusDiv = document.getElementById("status");
   const authDiv = document.getElementById("auth");
-  const textContainer = document.getElementById("textContainer");
-  const textInput = document.getElementById("textInput");
   const controlsDiv = document.getElementById("controls");
   const backspaceBtn = document.getElementById("backspaceBtn");
+  const hiddenInput = document.getElementById("hiddenInput");
 
   function connect() {
     ws = new WebSocket(wsUrl);
@@ -89,8 +92,9 @@
           authorized = true;
           statusDiv.textContent = "Авторизация успешна!";
           authDiv.style.display = "none";
-          textContainer.style.display = "block";
           controlsDiv.style.display = "block";
+          hiddenInput.value = "";
+          hiddenInput.focus();
         } else if (msg.type === "auth" && msg.status === "fail") {
           statusDiv.textContent = "Неверный пароль.";
         }
@@ -105,12 +109,11 @@
     ws.onclose = () => {
       statusDiv.textContent = "Соединение закрыто. Перезагрузите страницу.";
       authDiv.style.display = "block";
-      textContainer.style.display = "none";
       controlsDiv.style.display = "none";
       authorized = false;
     };
 
-    ws.onerror = (e) => {
+    ws.onerror = () => {
       statusDiv.textContent = "Ошибка соединения.";
     };
   }
@@ -126,27 +129,38 @@
     }
   };
 
-  // Отправка клика
-  screen.onclick = (e) => {
-    if (!authorized) return;
-    const rect = screen.getBoundingClientRect();
-    const x = Math.round((e.clientX - rect.left) * 1280 / screen.clientWidth);
-    const y = Math.round((e.clientY - rect.top) * 720 / screen.clientHeight);
-    ws.send(JSON.stringify({ type: "click", x, y }));
-  };
+  // Клик по экрану — фокус в скрытое поле (вызов клавиатуры)
+  screen.addEventListener('click', () => {
+    if (authorized) hiddenInput.focus();
+  });
 
-  // Отправка текста
-  textInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && authorized) {
-      const text = textInput.value;
-      if (text.length > 0) {
-        ws.send(JSON.stringify({ type: "type", text: text }));
-        textInput.value = "";
-      }
+  // При вводе в скрытое поле отправляем текст и очищаем поле
+  hiddenInput.addEventListener('input', () => {
+    if (!authorized) return;
+    const val = hiddenInput.value;
+    if (val.length > 0) {
+      ws.send(JSON.stringify({ type: "type", text: val }));
+      hiddenInput.value = '';
     }
   });
 
-  // Скроллинг по свайпу
+  // Обработка backspace с клавиатуры
+  hiddenInput.addEventListener('keydown', (e) => {
+    if (!authorized) return;
+    if (e.key === "Backspace") {
+      ws.send(JSON.stringify({ type: "backspace" }));
+      e.preventDefault();
+    }
+  });
+
+  // Кнопка Backspace
+  backspaceBtn.onclick = () => {
+    if (!authorized) return;
+    ws.send(JSON.stringify({ type: "backspace" }));
+    hiddenInput.focus();
+  };
+
+  // Скролл свайпом
   let lastTouchY = null;
   screen.addEventListener("touchstart", (e) => {
     lastTouchY = e.touches[0].clientY;
@@ -157,15 +171,9 @@
     let currentY = e.touches[0].clientY;
     let dy = lastTouchY - currentY;
     lastTouchY = currentY;
-    ws.send(JSON.stringify({ type: "scroll", dy: dy * 10 }));
+    ws.send(JSON.stringify({ type: "scroll", dy: Math.round(dy * 10) }));
     e.preventDefault();
   }, { passive: false });
-
-  // Кнопка backspace
-  backspaceBtn.onclick = () => {
-    if (!authorized) return;
-    ws.send(JSON.stringify({ type: "backspace" }));
-  };
 
   connect();
 })();
