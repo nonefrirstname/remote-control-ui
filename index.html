@@ -14,7 +14,7 @@
   <br>
   <input type="text" id="textInput" placeholder="Введите текст и нажмите Enter">
   <script>
-    const ws = new WebSocket("https://nonefrirstname.github.io/remote-control-ui/"); // замените на реальный IP
+    const ws = new WebSocket("ws://192.168.1.103:8765");
     const screen = document.getElementById("screen");
     const input = document.getElementById("textInput");
 
