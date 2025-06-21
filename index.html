@@ -18,8 +18,6 @@
     #screen {
       width: 100vw;
       height: 100vh;
-      max-width: none;
-      max-height: none;
       border: 2px solid #444;
       object-fit: contain;
       image-rendering: pixelated;
@@ -151,8 +149,14 @@
     return { x, y };
   }
 
-  // Однократный клик — отправляем click
-  // Зажатие — включаем drag (move mouse)
+  // Отключаем стандартное поведение клика, чтобы не открывался чат и прочее
+  screen.addEventListener("click", (e) => {
+    if (!authorized) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, { passive: false });
+
+  // Обработка касания (тап, зажатие и движение)
   screen.addEventListener("touchstart", (e) => {
     if (!authorized) return;
     e.preventDefault();
@@ -161,7 +165,6 @@
     lastTouchPos = getCoordsFromTouch(touch);
     isDragging = false;
 
-    // Запускаем таймер, если держать > 400мс — включаем drag
     this._dragTimeout = setTimeout(() => {
       isDragging = true;
     }, 400);
@@ -195,9 +198,10 @@
     isDragging = false;
   }, { passive: false });
 
-  // Ввод с виртуальной клавиатуры (Enter срабатывает как ввод)
+  // Ловим событие input для отправки текста при Enter (клавиатура телефона)
   hiddenInput.addEventListener("keydown", (e) => {
     if (!authorized) return;
+
     if (e.key === "Enter") {
       const text = hiddenInput.value;
       if (text.length > 0) {
@@ -209,6 +213,12 @@
       ws.send(JSON.stringify({ type: "backspace" }));
       e.preventDefault();
     }
+  });
+
+  // Для некоторых телефонов лучше ловить input событие (дополнительно)
+  hiddenInput.addEventListener("input", (e) => {
+    if (!authorized) return;
+    // Можно тут что-то сделать, если нужно
   });
 
   // Кнопки прокрутки
